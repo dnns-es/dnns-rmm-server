@@ -49,12 +49,28 @@ if (!fs.existsSync(SSH_KEY_PRIV)) {
 }
 const SERVER_PUBKEY = fs.existsSync(SSH_KEY_PUB) ? fs.readFileSync(SSH_KEY_PUB, 'utf8').trim() : '';
 
+// Persistencia de password: si no hay env, intenta leer del archivo, si no genera
+const PATH_PW = path.join(RUTA_DATOS, 'admin-password.txt');
+function leerPasswordPersistida() {
+  try {
+    const c = fs.readFileSync(PATH_PW, 'utf8');
+    const m = c.match(/^Password:\s*(.+)$/m);
+    return m ? m[1].trim() : null;
+  } catch { return null; }
+}
+function guardarPasswordPersistida(pw) {
+  fs.writeFileSync(PATH_PW, `Usuario: ${ADMIN_USER}\nPassword: ${pw}\nActualizada: ${new Date().toISOString()}\n`);
+  fs.chmodSync(PATH_PW, 0o600);
+}
 if (!ADMIN_PASSWORD) {
-  ADMIN_PASSWORD = crypto.randomBytes(12).toString('base64').replace(/[+/=]/g, '').substring(0, 16);
-  const path_pw = path.join(RUTA_DATOS, 'admin-password.txt');
-  fs.writeFileSync(path_pw, `Generada al arranque (puedes sobreescribir con env ADMIN_PASSWORD).\nUsuario: ${ADMIN_USER}\nPassword: ${ADMIN_PASSWORD}\n`);
-  fs.chmodSync(path_pw, 0o600);
-  console.log('[ADMIN] Password generada en ' + path_pw);
+  ADMIN_PASSWORD = leerPasswordPersistida();
+  if (!ADMIN_PASSWORD) {
+    ADMIN_PASSWORD = crypto.randomBytes(12).toString('base64').replace(/[+/=]/g, '').substring(0, 16);
+    guardarPasswordPersistida(ADMIN_PASSWORD);
+    console.log('[ADMIN] Password generada en ' + PATH_PW);
+  } else {
+    console.log('[ADMIN] Password leida de ' + PATH_PW);
+  }
 }
 
 // ============================================================
@@ -242,6 +258,26 @@ const server = http.createServer(async (req, res) => {
     return enviarJson(res, 200, { user: sess.user });
   }
 
+  // Cambiar password (autenticado)
+  if (req.method === 'POST' && url === '/api/auth/cambiar-password') {
+    const sess = autenticado(req);
+    if (!sess) return enviarJson(res, 401, { error: 'No autenticado' });
+    try {
+      const { actual, nueva } = await leerJsonBody(req);
+      if (!actual || actual !== ADMIN_PASSWORD) {
+        return enviarJson(res, 401, { ok: false, error: 'Password actual incorrecta' });
+      }
+      if (!nueva || nueva.length < 8) {
+        return enviarJson(res, 400, { ok: false, error: 'La nueva password debe tener mínimo 8 caracteres' });
+      }
+      ADMIN_PASSWORD = nueva;
+      guardarPasswordPersistida(nueva);
+      return enviarJson(res, 200, { ok: true });
+    } catch (e) {
+      return enviarJson(res, 400, { ok: false, error: 'JSON inválido' });
+    }
+  }
+
   // ----- REGISTRO de agentes (publico, con token opcional) -----
   if (req.method === 'POST' && url === '/api/agentes/registrar') {
     try {
@@ -336,6 +372,30 @@ const server = http.createServer(async (req, res) => {
     agentes.splice(idx, 1);
     guardarAgentes(agentes);
     return enviarJson(res, 200, { ok: true });
+  }
+
+  // Cambiar puerto del túnel de un agente
+  if (req.method === 'POST' && url.match(/^\/api\/agentes\/[^/]+\/puerto$/)) {
+    try {
+      const hwid = url.split('/')[3];
+      const { port } = await leerJsonBody(req);
+      const nuevoPort = parseInt(port, 10);
+      if (isNaN(nuevoPort) || nuevoPort < PUERTO_INICIAL_TUNEL || nuevoPort > PUERTO_FINAL_TUNEL) {
+        return enviarJson(res, 400, { ok: false, error: `Puerto debe estar entre ${PUERTO_INICIAL_TUNEL} y ${PUERTO_FINAL_TUNEL}` });
+      }
+      const agentes = cargarAgentes();
+      const idx = agentes.findIndex(a => a.hw_id === hwid);
+      if (idx < 0) return enviarJson(res, 404, { ok: false, error: 'Agente no existe' });
+      if (agentes.some((a, i) => i !== idx && a.port === nuevoPort)) {
+        return enviarJson(res, 409, { ok: false, error: 'Puerto ya en uso por otro agente' });
+      }
+      agentes[idx].port = nuevoPort;
+      agentes[idx].ultima_actualizacion = new Date().toISOString();
+      guardarAgentes(agentes);
+      return enviarJson(res, 200, { ok: true, port: nuevoPort, aviso: 'El agente debe reconectarse para usar el nuevo puerto' });
+    } catch (e) {
+      return enviarJson(res, 500, { ok: false, error: e.message });
+    }
   }
 
   // ----- HTML / Estaticos -----

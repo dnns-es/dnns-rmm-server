@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DNNS RMM - Agentes</title>
+<title>DNNS RMM - Panel</title>
 <link rel="stylesheet" href="/css/estilos.css">
 <script src="/js/tema.js"></script>
 <meta name="theme-color" content="#69c350">
@@ -12,7 +12,7 @@
 
 <header class="barra">
   <div class="contenedor barra-flex">
-    <div><span class="logo">DNNS RMM</span> <span class="logo-tag">server admin</span></div>
+    <div><span class="logo">DNNS RMM</span> <span class="logo-tag" id="seccionTitulo">Dashboard</span></div>
     <nav class="menu">
       <span class="texto-suave" id="userInfo"></span>
       <button class="link" id="btnRefresh" title="Recargar">↻</button>
@@ -21,47 +21,134 @@
   </div>
 </header>
 
-<main class="contenedor">
-  <div class="flex-entre mb-2">
-    <div>
-      <h1>Agentes RMM registrados</h1>
-      <p class="texto-suave">Servidores con túnel SSH inverso activo hacia este server.</p>
-    </div>
-  </div>
+<div class="app-layout">
+  <aside class="sidebar">
+    <h4>Navegación</h4>
+    <nav>
+      <button class="sidebar-link activo" data-tab="dashboard"><span class="ico">📊</span> Dashboard</button>
+      <button class="sidebar-link" data-tab="agentes"><span class="ico">🛰️</span> Agentes <span class="badge-num" id="badgeAgentes">0</span></button>
+      <button class="sidebar-link" data-tab="logs"><span class="ico">📋</span> Logs</button>
+      <button class="sidebar-link" data-tab="config"><span class="ico">⚙️</span> Configuración</button>
+    </nav>
+    <h4 style="margin-top:18px;">Server</h4>
+    <nav>
+      <a class="sidebar-link" href="https://github.com/dnns-es/dnns-rmm-server" target="_blank"><span class="ico">📦</span> Código fuente</a>
+      <a class="sidebar-link" href="https://github.com/dnns-es/dnns-rmm-agent" target="_blank"><span class="ico">🔌</span> Agente</a>
+    </nav>
+  </aside>
 
-  <div id="alerta" class="alerta alerta-error oculto"></div>
+  <main class="contenido">
+    <div id="alerta" class="alerta alerta-error oculto"></div>
+    <div id="cargando" class="texto-suave" style="text-align:center;padding:40px;">Cargando...</div>
 
-  <!-- STATS -->
-  <div class="stats-grid" id="stats"></div>
+    <!-- ========== DASHBOARD ========== -->
+    <section data-pane="dashboard">
+      <h1>Dashboard</h1>
+      <p class="texto-suave mb-2">Resumen del servidor RMM y agentes conectados.</p>
 
-  <!-- LISTADO -->
-  <div id="cargando" class="texto-suave" style="text-align:center;padding:40px;">Cargando agentes...</div>
+      <div class="stats-grid">
+        <div class="stat-rica"><div class="stat-ico">🛰️</div><div class="stat-info"><div class="num" id="stTotal">0</div><div class="lbl">Agentes activos</div></div></div>
+        <div class="stat-rica"><div class="stat-ico">📦</div><div class="stat-info"><div class="num" id="stProductos">0</div><div class="lbl">Productos distintos</div></div></div>
+        <div class="stat-rica"><div class="stat-ico">🌐</div><div class="stat-info"><div class="num" id="stDominios">0</div><div class="lbl">Con dominio público</div></div></div>
+        <div class="stat-rica"><div class="stat-ico">📧</div><div class="stat-info"><div class="num" id="stEmails">0</div><div class="lbl">Con admin email</div></div></div>
+      </div>
 
-  <div id="vacio" class="tarjeta oculto" style="text-align:center;">
-    <p style="font-size:3rem;margin-bottom:8px;">🛰️</p>
-    <h3>Aún no hay agentes registrados</h3>
-    <p class="texto-suave mt-2">Instala el agente en cualquier servidor con:</p>
-    <pre class="mono" style="background:var(--bg-3);padding:14px;border-radius:8px;margin-top:14px;text-align:left;font-size:.85rem;overflow-x:auto;">bash &lt;(curl -fsSL https://raw.githubusercontent.com/dnns-es/dnns-rmm-agent/main/install.sh)</pre>
-  </div>
+      <h2 class="mt-2">Últimos agentes</h2>
+      <div id="ultimosAgentes" class="mt-2"></div>
+    </section>
 
-  <div id="listado" class="tabla-wrap oculto">
-    <table>
-      <thead>
-        <tr>
-          <th>Hostname</th>
-          <th>Producto</th>
-          <th>IP local</th>
-          <th>Dominio</th>
-          <th>Admin</th>
-          <th>Túnel</th>
-          <th>Registrado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody id="filas"></tbody>
-    </table>
-  </div>
-</main>
+    <!-- ========== AGENTES ========== -->
+    <section data-pane="agentes" class="oculto">
+      <h1>Agentes RMM</h1>
+      <p class="texto-suave mb-2">Servidores con túnel SSH inverso activo.</p>
+
+      <div class="barra-acciones">
+        <input type="text" class="buscar" id="buscar" placeholder="🔍 Buscar por hostname, IP, producto, dominio...">
+        <select id="filtroProducto"><option value="">Todos los productos</option></select>
+        <button class="boton-sec boton-mini" onclick="exportCSV()">⬇ Export CSV</button>
+      </div>
+
+      <div id="vacio" class="empty oculto">
+        <div class="empty-ico">🛰️</div>
+        <h3>Aún no hay agentes registrados</h3>
+        <p class="texto-suave mt-2">Instala el agente en cualquier servidor con:</p>
+        <pre class="mono" style="background:var(--bg-3);padding:14px;border-radius:8px;margin-top:14px;text-align:left;font-size:.85rem;overflow-x:auto;display:inline-block;">bash &lt;(curl -fsSL https://raw.githubusercontent.com/dnns-es/dnns-rmm-agent/main/install.sh)</pre>
+      </div>
+
+      <div id="listado" class="tabla-wrap oculto">
+        <table>
+          <thead>
+            <tr>
+              <th>Estado</th>
+              <th>Hostname</th>
+              <th>Producto</th>
+              <th>IP local</th>
+              <th>Dominio</th>
+              <th>Túnel</th>
+              <th>Registrado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="filas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========== LOGS ========== -->
+    <section data-pane="logs" class="oculto">
+      <h1>Logs de actividad</h1>
+      <p class="texto-suave mb-2">Registros de autenticaciones, conexiones y eventos del server.</p>
+      <div class="empty">
+        <div class="empty-ico">📋</div>
+        <h3>Próximamente</h3>
+        <p class="texto-suave">Aquí verás logins admin, registros de agentes, conexiones SSH y errores.</p>
+      </div>
+    </section>
+
+    <!-- ========== CONFIGURACIÓN ========== -->
+    <section data-pane="config" class="oculto">
+      <h1>Configuración</h1>
+      <p class="texto-suave mb-2">Ajustes del servidor RMM.</p>
+
+      <div class="tarjeta">
+        <h2>Información del servidor</h2>
+        <div class="par mt-2"><span class="k">Servicio:</span> <span class="mono">dnns-rmm-server</span></div>
+        <div class="par"><span class="k">Versión:</span> <span class="mono">1.0.0</span></div>
+        <div class="par"><span class="k">Repo:</span> <a href="https://github.com/dnns-es/dnns-rmm-server" target="_blank">dnns-es/dnns-rmm-server</a></div>
+      </div>
+
+      <div class="tarjeta mt-2">
+        <h2>👤 Mi perfil — cambiar contraseña</h2>
+        <p class="texto-suave mt-2" style="font-size:.88rem;">La nueva contraseña se persiste en <code class="mono">/var/lib/dnns-rmm-server/admin-password.txt</code> y se mantendrá tras reiniciar el servidor.</p>
+
+        <div id="pwAlerta" class="alerta oculto"></div>
+
+        <form id="formPw" class="mt-2" style="max-width:420px;">
+          <div class="campo">
+            <label>Contraseña actual</label>
+            <div style="position:relative;">
+              <input type="password" id="pwActual" required autocomplete="current-password" style="padding-right:42px;">
+              <button type="button" onclick="togglePw('pwActual', this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;padding:4px 8px;cursor:pointer;color:var(--texto-suave);font-size:1.05rem;">👁</button>
+            </div>
+          </div>
+          <div class="campo">
+            <label>Nueva contraseña (mín 8 caracteres)</label>
+            <div style="position:relative;">
+              <input type="password" id="pwNueva" required minlength="8" autocomplete="new-password" style="padding-right:42px;">
+              <button type="button" onclick="togglePw('pwNueva', this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;padding:4px 8px;cursor:pointer;color:var(--texto-suave);font-size:1.05rem;">👁</button>
+            </div>
+          </div>
+          <div class="campo">
+            <label>Repetir nueva contraseña</label>
+            <input type="password" id="pwRepetir" required minlength="8">
+          </div>
+          <button type="submit">Cambiar contraseña</button>
+        </form>
+      </div>
+    </section>
+
+  </main>
+</div>
 
 <!-- MODAL DETALLES -->
 <div id="modalDetalle" class="modal-bg">
@@ -69,105 +156,179 @@
     <h3 id="modalTitulo"></h3>
     <div id="modalCuerpo"></div>
     <div class="flex" style="margin-top:18px;justify-content:flex-end;">
-      <button class="boton-sec" onclick="cerrarModal()">Cerrar</button>
+      <button class="boton-sec" onclick="cerrarModales()">Cerrar</button>
     </div>
   </div>
 </div>
 
-<!-- MODAL CONECTAR -->
+<!-- MODAL CONECTAR (copiar SSH cmd) -->
 <div id="modalConectar" class="modal-bg">
   <div class="modal">
-    <h3>Conectar al agente</h3>
-    <p class="texto-suave" style="margin-bottom:14px;">Desde este server (CT 104), pega esto en tu terminal SSH:</p>
-    <div class="copy-input">
-      <input type="text" id="cmdSSH" readonly>
-      <button class="boton-mini" onclick="copiarCmd()">Copiar</button>
-    </div>
-    <p class="texto-suave" style="margin-top:18px;font-size:.85rem;">
-      También puedes hacer SSH inverso desde tu PC oficina:
-    </p>
-    <div class="copy-input">
-      <input type="text" id="cmdSSHRemoto" readonly>
-      <button class="boton-mini" onclick="copiarCmd2()">Copiar</button>
-    </div>
+    <h3>Conectar al agente por SSH</h3>
+    <p class="texto-suave mt-2" style="font-size:.9rem;">Desde el server RMM:</p>
+    <div class="copy-input"><input type="text" id="cmdSSH" readonly><button class="boton-mini" onclick="copiarCmd('cmdSSH')">Copiar</button></div>
+    <p class="texto-suave mt-2" style="font-size:.9rem;">Desde otro PC (con jump host):</p>
+    <div class="copy-input"><input type="text" id="cmdSSHRemoto" readonly><button class="boton-mini" onclick="copiarCmd('cmdSSHRemoto')">Copiar</button></div>
     <div class="flex" style="margin-top:18px;justify-content:flex-end;">
-      <button class="boton-sec" onclick="cerrarModal()">Cerrar</button>
+      <button class="boton-sec" onclick="cerrarModales()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CAMBIAR PUERTO -->
+<div id="modalPuerto" class="modal-bg">
+  <div class="modal">
+    <h3>Cambiar puerto del túnel</h3>
+    <p class="texto-suave mt-2">Asignar otro puerto al agente <strong id="puertoHost"></strong>.</p>
+    <p class="texto-suave" style="font-size:.85rem;">Rango disponible: <strong>40000-40999</strong>. Tras cambiar, el agente se reconectará automáticamente.</p>
+    <div class="campo mt-2">
+      <label>Puerto actual</label>
+      <input type="text" id="puertoActual" readonly>
+    </div>
+    <div class="campo">
+      <label>Nuevo puerto</label>
+      <input type="number" id="puertoNuevo" min="40000" max="40999" placeholder="40005">
+    </div>
+    <div id="puertoAlerta" class="alerta alerta-error oculto"></div>
+    <div class="flex" style="margin-top:18px;justify-content:flex-end;">
+      <button class="boton-sec" onclick="cerrarModales()">Cancelar</button>
+      <button onclick="confirmarCambioPuerto()">Cambiar puerto</button>
     </div>
   </div>
 </div>
 
 <script>
 let agentesCache = [];
+let agenteActualPuerto = null;
 
+// ========== TABS ==========
+document.querySelectorAll('.sidebar-link[data-tab]').forEach(b => {
+  b.addEventListener('click', () => {
+    const tab = b.dataset.tab;
+    document.querySelectorAll('.sidebar-link[data-tab]').forEach(x => x.classList.remove('activo'));
+    b.classList.add('activo');
+    document.querySelectorAll('section[data-pane]').forEach(p => p.classList.add('oculto'));
+    document.querySelector(`section[data-pane="${tab}"]`).classList.remove('oculto');
+    document.getElementById('seccionTitulo').textContent = b.textContent.trim().replace(/\s+\d+$/, '');
+  });
+});
+
+// ========== CARGA ==========
 async function cargar() {
   document.getElementById('cargando').classList.remove('oculto');
-  document.getElementById('vacio').classList.add('oculto');
-  document.getElementById('listado').classList.add('oculto');
-
   try {
     const yo = await fetch('/api/auth/yo', {credentials:'same-origin'}).then(r => r.ok ? r.json() : Promise.reject('401'));
     document.getElementById('userInfo').textContent = '👤 ' + yo.user;
 
     const r = await fetch('/api/agentes', {credentials:'same-origin'});
-    if (r.status === 401) return window.location.href = '/login';
+    if (r.status === 401) return location.href = '/login';
     const d = await r.json();
     agentesCache = d.agentes || [];
 
     document.getElementById('cargando').classList.add('oculto');
     pintarStats();
-
-    if (agentesCache.length === 0) {
-      document.getElementById('vacio').classList.remove('oculto');
-      return;
-    }
-
+    pintarSelectProductos();
     pintarFilas();
-    document.getElementById('listado').classList.remove('oculto');
+    pintarUltimos();
+    document.getElementById('badgeAgentes').textContent = agentesCache.length;
   } catch (e) {
-    if (e === '401') return window.location.href = '/login';
+    if (e === '401') return location.href = '/login';
     document.getElementById('cargando').classList.add('oculto');
     mostrarError('Error: ' + e);
   }
 }
 
+// ========== STATS ==========
 function pintarStats() {
-  const total = agentesCache.length;
-  const productos = new Set(agentesCache.map(a => a.producto || 'generic')).size;
-  const conDominio = agentesCache.filter(a => a.dominio).length;
-  const conEmail = agentesCache.filter(a => a.admin_email).length;
-  document.getElementById('stats').innerHTML = `
-    <div class="stat"><div class="num">${total}</div><div class="lbl">Agentes activos</div></div>
-    <div class="stat"><div class="num">${productos}</div><div class="lbl">Productos distintos</div></div>
-    <div class="stat"><div class="num">${conDominio}</div><div class="lbl">Con dominio reportado</div></div>
-    <div class="stat"><div class="num">${conEmail}</div><div class="lbl">Con admin email</div></div>
-  `;
+  document.getElementById('stTotal').textContent = agentesCache.length;
+  document.getElementById('stProductos').textContent = new Set(agentesCache.map(a => a.producto || 'generic')).size;
+  document.getElementById('stDominios').textContent = agentesCache.filter(a => a.dominio).length;
+  document.getElementById('stEmails').textContent = agentesCache.filter(a => a.admin_email).length;
+}
+
+function pintarUltimos() {
+  const cont = document.getElementById('ultimosAgentes');
+  if (agentesCache.length === 0) {
+    cont.innerHTML = '<div class="empty"><div class="empty-ico">🛰️</div><h3>Sin agentes aún</h3></div>';
+    return;
+  }
+  const ult = [...agentesCache].sort((a,b) => new Date(b.registrado) - new Date(a.registrado)).slice(0, 5);
+  cont.innerHTML = '<div class="tabla-wrap"><table><thead><tr><th>Hostname</th><th>Producto</th><th>Túnel</th><th>Registrado</th></tr></thead><tbody>' +
+    ult.map(a => `
+      <tr>
+        <td><span class="dot ${esOnline(a) ? 'online' : 'offline'}"></span><strong>${esc(a.hostname)}</strong></td>
+        <td><span class="badge badge-prod">${esc(a.producto || 'generic')}</span></td>
+        <td><span class="badge badge-online">${esc(a.user)}:${a.port}</span></td>
+        <td><small class="texto-suave">${formatearFecha(a.registrado)}</small></td>
+      </tr>
+    `).join('') + '</tbody></table></div>';
+}
+
+// ========== AGENTES TABLA ==========
+function pintarSelectProductos() {
+  const productos = [...new Set(agentesCache.map(a => a.producto || 'generic'))].sort();
+  const sel = document.getElementById('filtroProducto');
+  sel.innerHTML = '<option value="">Todos los productos</option>' +
+    productos.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
 }
 
 function pintarFilas() {
-  const filas = document.getElementById('filas');
-  filas.innerHTML = '';
-  agentesCache.forEach((a, i) => {
-    const tr = document.createElement('tr');
-    const fecha = a.registrado ? new Date(a.registrado).toLocaleString('es-ES') : '-';
-    tr.innerHTML = `
-      <td><strong>${esc(a.hostname)}</strong></td>
-      <td><span class="badge badge-prod">${esc(a.producto || 'generic')}</span></td>
-      <td><span class="mono-corto">${esc(a.ct_ip || '-')}</span></td>
-      <td>${a.dominio ? esc(a.dominio) : '<span class="texto-suave">-</span>'}</td>
-      <td>${a.admin_email ? esc(a.admin_email) : '<span class="texto-suave">-</span>'}</td>
-      <td><span class="badge badge-online">${esc(a.user)}:${a.port}</span></td>
-      <td><small class="texto-suave">${fecha}</small></td>
-      <td><div class="acciones">
-        <button class="boton-mini" onclick="verDetalle(${i})">Ver</button>
-        <button class="boton-mini boton-sec" onclick="abrirConsola(${i})" title="Consola web">⌨</button>
-        <button class="boton-mini" onclick="conectar(${i})" title="Copiar SSH">SSH</button>
-        <button class="boton-mini boton-rojo" onclick="borrar(${i})">×</button>
-      </div></td>
-    `;
-    filas.appendChild(tr);
+  const q = document.getElementById('buscar').value.trim().toLowerCase();
+  const fp = document.getElementById('filtroProducto').value;
+  const filtrados = agentesCache.filter(a => {
+    if (fp && (a.producto || 'generic') !== fp) return false;
+    if (q) {
+      const txt = (a.hostname + ' ' + (a.ct_ip||'') + ' ' + (a.producto||'') + ' ' + (a.dominio||'') + ' ' + (a.admin_email||'')).toLowerCase();
+      if (!txt.includes(q)) return false;
+    }
+    return true;
   });
+
+  const filas = document.getElementById('filas');
+  const vacio = document.getElementById('vacio');
+  const listado = document.getElementById('listado');
+
+  if (filtrados.length === 0) {
+    listado.classList.add('oculto');
+    vacio.classList.remove('oculto');
+    return;
+  }
+  vacio.classList.add('oculto');
+  listado.classList.remove('oculto');
+
+  filas.innerHTML = filtrados.map((a, i) => {
+    const realIdx = agentesCache.indexOf(a);
+    return `
+      <tr>
+        <td><span class="dot ${esOnline(a) ? 'online' : 'offline'}" title="${esOnline(a)?'online':'offline'}"></span></td>
+        <td><strong>${esc(a.hostname)}</strong>${a.admin_name ? `<br><small class="texto-suave">${esc(a.admin_name)}</small>` : ''}</td>
+        <td><span class="badge badge-prod">${esc(a.producto || 'generic')}</span></td>
+        <td><span class="mono-corto">${esc(a.ct_ip || '-')}</span></td>
+        <td>${a.dominio ? esc(a.dominio) : '<span class="texto-suave">-</span>'}</td>
+        <td><span class="badge badge-online">${esc(a.user)}:${a.port}</span></td>
+        <td><small class="texto-suave">${formatearFecha(a.registrado)}</small></td>
+        <td><div class="acciones">
+          <button class="boton-mini" onclick="verDetalle(${realIdx})" title="Ver detalle">👁</button>
+          <button class="boton-mini boton-sec" onclick="abrirConsola(${realIdx})" title="Consola web">⌨</button>
+          <button class="boton-mini" onclick="conectar(${realIdx})" title="Copiar SSH">SSH</button>
+          <button class="boton-mini boton-sec" onclick="cambiarPuerto(${realIdx})" title="Cambiar puerto">⇄</button>
+          <button class="boton-mini boton-rojo" onclick="borrar(${realIdx})" title="Borrar">×</button>
+        </div></td>
+      </tr>
+    `;
+  }).join('');
 }
 
+function esOnline(a) {
+  if (!a.ultimo_heartbeat) return true; // no info -> asumimos online
+  const diff = Date.now() - new Date(a.ultimo_heartbeat).getTime();
+  return diff < 5 * 60 * 1000;
+}
+
+document.getElementById('buscar').addEventListener('input', pintarFilas);
+document.getElementById('filtroProducto').addEventListener('change', pintarFilas);
+
+// ========== ACCIONES ==========
 function verDetalle(i) {
   const a = agentesCache[i];
   document.getElementById('modalTitulo').textContent = a.hostname;
@@ -181,67 +342,97 @@ function verDetalle(i) {
     <div class="par"><span class="k">Admin nombre</span><span>${esc(a.admin_name || '-')}</span></div>
     <div class="par"><span class="k">Túnel user</span><span class="mono">${esc(a.user)}</span></div>
     <div class="par"><span class="k">Túnel puerto</span><span class="mono">${a.port}</span></div>
-    <div class="par"><span class="k">Registrado</span><span>${a.registrado ? new Date(a.registrado).toLocaleString('es-ES') : '-'}</span></div>
-    <div class="par"><span class="k">Última actualización</span><span>${a.ultima_actualizacion ? new Date(a.ultima_actualizacion).toLocaleString('es-ES') : '-'}</span></div>
-    <div class="par"><span class="k">Último heartbeat</span><span>${a.ultimo_heartbeat ? new Date(a.ultimo_heartbeat).toLocaleString('es-ES') : '<span class="texto-suave">nunca</span>'}</span></div>
+    <div class="par"><span class="k">HW ID</span><span class="mono" style="font-size:.78rem;">${esc(a._hw_id || '-')}</span></div>
+    <div class="par"><span class="k">Registrado</span><span>${formatearFecha(a.registrado)}</span></div>
+    <div class="par"><span class="k">Última act.</span><span>${formatearFecha(a.ultima_actualizacion)}</span></div>
+    <div class="par"><span class="k">Heartbeat</span><span>${a.ultimo_heartbeat ? formatearFecha(a.ultimo_heartbeat) : '<span class="texto-suave">nunca</span>'}</span></div>
   `;
   document.getElementById('modalDetalle').classList.add('activo');
+}
+
+function abrirConsola(i) {
+  const a = agentesCache[i];
+  window.open(`/consola?port=${a.port}&host=${encodeURIComponent(a.hostname)}`, '_blank');
 }
 
 function conectar(i) {
   const a = agentesCache[i];
   document.getElementById('cmdSSH').value = `ssh root@127.0.0.1 -p ${a.port}`;
-  document.getElementById('cmdSSHRemoto').value = `ssh -J root@${window.location.hostname} root@127.0.0.1 -p ${a.port}`;
+  document.getElementById('cmdSSHRemoto').value = `ssh -J root@${location.hostname} root@127.0.0.1 -p ${a.port}`;
   document.getElementById('modalConectar').classList.add('activo');
 }
 
-function abrirConsola(i) {
+function cambiarPuerto(i) {
   const a = agentesCache[i];
-  const url = `/consola?port=${a.port}&host=${encodeURIComponent(a.hostname)}`;
-  window.open(url, '_blank');
+  agenteActualPuerto = a;
+  document.getElementById('puertoHost').textContent = a.hostname;
+  document.getElementById('puertoActual').value = a.port;
+  document.getElementById('puertoNuevo').value = '';
+  document.getElementById('puertoAlerta').classList.add('oculto');
+  document.getElementById('modalPuerto').classList.add('activo');
 }
 
-function copiarCmd() {
-  const inp = document.getElementById('cmdSSH');
-  inp.select(); navigator.clipboard.writeText(inp.value);
-  const btn = event.target;
-  const txt = btn.textContent; btn.textContent = '✓'; setTimeout(() => btn.textContent = txt, 1200);
+async function confirmarCambioPuerto() {
+  const nuevo = parseInt(document.getElementById('puertoNuevo').value, 10);
+  if (isNaN(nuevo) || nuevo < 40000 || nuevo > 40999) {
+    return mostrarPuertoError('Puerto debe ser entre 40000 y 40999');
+  }
+  if (agentesCache.some(a => a.port === nuevo && a !== agenteActualPuerto)) {
+    return mostrarPuertoError('Ese puerto ya está en uso por otro agente');
+  }
+  try {
+    const r = await fetch(`/api/agentes/${agenteActualPuerto._hw_id}/puerto`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ port: nuevo })
+    });
+    const d = await r.json();
+    if (r.ok && d.ok) {
+      cerrarModales();
+      cargar();
+    } else {
+      mostrarPuertoError(d.error || 'Error');
+    }
+  } catch (e) { mostrarPuertoError('Error de red'); }
 }
-function copiarCmd2() {
-  const inp = document.getElementById('cmdSSHRemoto');
-  inp.select(); navigator.clipboard.writeText(inp.value);
-  const btn = event.target;
-  const txt = btn.textContent; btn.textContent = '✓'; setTimeout(() => btn.textContent = txt, 1200);
+
+function mostrarPuertoError(msg) {
+  const a = document.getElementById('puertoAlerta');
+  a.textContent = msg; a.classList.remove('oculto');
 }
 
 async function borrar(i) {
   const a = agentesCache[i];
-  if (!confirm(`Borrar el agente "${a.hostname}"?\n\nSe eliminará el usuario tunnel y el túnel se cortará.`)) return;
+  if (!confirm(`Borrar el agente "${a.hostname}"?\n\nEl usuario tunnel se eliminará y el túnel se cortará.`)) return;
   try {
-    // Necesitamos el hw_id (no lo enviamos en /api/agentes por privacidad). Lo pedimos por nombre.
-    const sel = await fetch('/api/agentes', {credentials:'same-origin'}).then(r => r.json());
-    const hwid = await getHwid(a.hostname, a.user);
-    if (!hwid) return mostrarError('No se pudo localizar el hw_id');
-    const r = await fetch('/api/agentes/' + hwid, {method:'DELETE', credentials:'same-origin'});
+    const r = await fetch('/api/agentes/' + a._hw_id, {method:'DELETE', credentials:'same-origin'});
     if (r.ok) cargar();
-    else mostrarError('Error borrando: ' + r.status);
+    else mostrarError('Error borrando');
   } catch (e) { mostrarError('Error: ' + e.message); }
 }
 
-async function getHwid(hostname, user) {
-  // El listado publico oculta hw_id. Por ahora pedimos al usuario manualmente o
-  // habilitamos endpoint admin que devuelve hw_id. Solucion temporal: index del array.
-  return await new Promise(resolve => {
-    const idx = agentesCache.findIndex(x => x.hostname === hostname && x.user === user);
-    if (idx < 0) return resolve(null);
-    // Mejor: pedimos al backend que añada hw_id en la respuesta admin
-    resolve(agentesCache[idx]._hw_id || prompt('hw_id del agente (32+ hex chars):'));
-  });
+function copiarCmd(id) {
+  const inp = document.getElementById(id);
+  inp.select(); navigator.clipboard.writeText(inp.value);
+  const btn = event.target;
+  const txt = btn.textContent; btn.textContent = '✓'; setTimeout(() => btn.textContent = txt, 1200);
 }
 
-function cerrarModal() {
-  document.getElementById('modalDetalle').classList.remove('activo');
-  document.getElementById('modalConectar').classList.remove('activo');
+function cerrarModales() {
+  document.querySelectorAll('.modal-bg').forEach(m => m.classList.remove('activo'));
+}
+
+function exportCSV() {
+  const cabecera = ['hostname','producto','ct_ip','dominio','admin_email','user','port','registrado'];
+  const filas = agentesCache.map(a => cabecera.map(c => `"${(a[c]||'').toString().replace(/"/g,'""')}"`).join(','));
+  const csv = cabecera.join(',') + '\n' + filas.join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'agentes-rmm-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function mostrarError(msg) {
@@ -249,18 +440,64 @@ function mostrarError(msg) {
   a.textContent = msg; a.classList.remove('oculto');
 }
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatearFecha(f) { return f ? new Date(f).toLocaleString('es-ES') : '-'; }
+
+// ========== CAMBIAR CONTRASEÑA ==========
+function togglePw(id, btn) {
+  const inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+  else { inp.type = 'password'; btn.textContent = '👁'; }
 }
+
+document.getElementById('formPw').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const actual = document.getElementById('pwActual').value;
+  const nueva = document.getElementById('pwNueva').value;
+  const repetir = document.getElementById('pwRepetir').value;
+  const a = document.getElementById('pwAlerta');
+
+  if (nueva !== repetir) {
+    a.className = 'alerta alerta-error'; a.textContent = 'Las contraseñas nuevas no coinciden';
+    a.classList.remove('oculto'); return;
+  }
+  if (nueva.length < 8) {
+    a.className = 'alerta alerta-error'; a.textContent = 'Mínimo 8 caracteres';
+    a.classList.remove('oculto'); return;
+  }
+
+  try {
+    const r = await fetch('/api/auth/cambiar-password', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ actual, nueva })
+    });
+    const d = await r.json();
+    if (r.ok && d.ok) {
+      a.className = 'alerta alerta-ok';
+      a.textContent = '✓ Contraseña cambiada. Úsala en tu próximo login.';
+      a.classList.remove('oculto');
+      document.getElementById('formPw').reset();
+    } else {
+      a.className = 'alerta alerta-error';
+      a.textContent = d.error || 'Error';
+      a.classList.remove('oculto');
+    }
+  } catch (e) {
+    a.className = 'alerta alerta-error';
+    a.textContent = 'Error de red';
+    a.classList.remove('oculto');
+  }
+});
 
 document.getElementById('btnRefresh').addEventListener('click', cargar);
 document.getElementById('btnLogout').addEventListener('click', async () => {
   await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
-  window.location.href = '/login';
+  location.href = '/login';
 });
 
 cargar();
-// Auto-refresh cada 30s
 setInterval(cargar, 30000);
 </script>
 
