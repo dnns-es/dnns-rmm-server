@@ -28,15 +28,14 @@
       </div>
       <div class="campo">
         <label>Password</label>
-        <input type="password" id="password" required autocomplete="current-password">
+        <div style="position:relative;">
+          <input type="password" id="password" required autocomplete="current-password" style="padding-right:42px;">
+          <button type="button" id="togglePw" title="Mostrar/ocultar"
+                  style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;padding:4px 8px;cursor:pointer;color:var(--texto-suave);font-size:1.1rem;">👁</button>
+        </div>
       </div>
       <button type="submit" id="btn" style="width:100%;">Acceder</button>
     </form>
-
-    <p class="texto-suave" style="font-size:.82rem;margin-top:18px;text-align:center;">
-      Si es la primera vez, busca el password en el server:<br>
-      <code class="mono">/var/lib/dnns-rmm-server/admin-password.txt</code>
-    </p>
   </div>
 </main>
 
@@ -44,6 +43,18 @@
 const form = document.getElementById('formLogin');
 const btn = document.getElementById('btn');
 const alerta = document.getElementById('alerta');
+const inputPw = document.getElementById('password');
+const togglePw = document.getElementById('togglePw');
+
+togglePw.addEventListener('click', () => {
+  if (inputPw.type === 'password') {
+    inputPw.type = 'text';
+    togglePw.textContent = '🙈';
+  } else {
+    inputPw.type = 'password';
+    togglePw.textContent = '👁';
+  }
+});
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
