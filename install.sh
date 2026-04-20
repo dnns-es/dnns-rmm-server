@@ -71,6 +71,7 @@ tar xzf /tmp/rmm-install/repo.tar.gz -C /tmp/rmm-install --no-same-owner 2>&1 | 
 EXTRACTED=$(find /tmp/rmm-install -maxdepth 1 -type d -name "dnns-rmm-server-*" | head -1)
 [ -d "$EXTRACTED" ] || err "Estructura inesperada del repo"
 cp "$EXTRACTED/server.js" "$INSTALL_DIR/"
+[ -d "$EXTRACTED/publico" ] && cp -r "$EXTRACTED/publico" "$INSTALL_DIR/"
 
 # --- 4. SSHD dedicado en puerto alternativo ---
 msg "Configurando sshd en puerto ${PUERTO_SSHD}..."

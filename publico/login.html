@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNNS RMM - Login</title>
+<link rel="stylesheet" href="/css/estilos.css">
+<meta name="theme-color" content="#69c350">
+</head>
+<body>
+
+<header class="barra">
+  <div class="contenedor barra-flex">
+    <div><span class="logo">DNNS RMM</span> <span class="logo-tag">server admin</span></div>
+  </div>
+</header>
+
+<main class="contenedor-estrecho">
+  <div class="tarjeta">
+    <h2 style="text-align:center;margin-bottom:16px;">Acceso administrador</h2>
+
+    <div id="alerta" class="alerta alerta-error oculto"></div>
+
+    <form id="formLogin">
+      <div class="campo">
+        <label>Usuario</label>
+        <input type="text" id="user" required value="admin" autocomplete="username">
+      </div>
+      <div class="campo">
+        <label>Password</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" id="btn" style="width:100%;">Acceder</button>
+    </form>
+
+    <p class="texto-suave" style="font-size:.82rem;margin-top:18px;text-align:center;">
+      Si es la primera vez, busca el password en el server:<br>
+      <code class="mono">/var/lib/dnns-rmm-server/admin-password.txt</code>
+    </p>
+  </div>
+</main>
+
+<script>
+const form = document.getElementById('formLogin');
+const btn = document.getElementById('btn');
+const alerta = document.getElementById('alerta');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  alerta.classList.add('oculto');
+  btn.disabled = true; btn.textContent = 'Accediendo...';
+
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        user: document.getElementById('user').value.trim(),
+        password: document.getElementById('password').value
+      })
+    });
+    const d = await r.json();
+    if (r.ok && d.ok) {
+      window.location.href = '/admin';
+    } else {
+      alerta.textContent = d.error || 'Error al acceder';
+      alerta.classList.remove('oculto');
+      btn.disabled = false; btn.textContent = 'Acceder';
+    }
+  } catch (err) {
+    alerta.textContent = 'Error de red';
+    alerta.classList.remove('oculto');
+    btn.disabled = false; btn.textContent = 'Acceder';
+  }
+});
+</script>
+
+</body>
+</html>
