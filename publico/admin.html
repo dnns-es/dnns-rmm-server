@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DNNS RMM - Agentes</title>
 <link rel="stylesheet" href="/css/estilos.css">
+<script src="/js/tema.js"></script>
 <meta name="theme-color" content="#69c350">
 </head>
 <body>
@@ -158,7 +159,8 @@ function pintarFilas() {
       <td><small class="texto-suave">${fecha}</small></td>
       <td><div class="acciones">
         <button class="boton-mini" onclick="verDetalle(${i})">Ver</button>
-        <button class="boton-mini" onclick="conectar(${i})" title="Conectar SSH">SSH</button>
+        <button class="boton-mini boton-sec" onclick="abrirConsola(${i})" title="Consola web">⌨</button>
+        <button class="boton-mini" onclick="conectar(${i})" title="Copiar SSH">SSH</button>
         <button class="boton-mini boton-rojo" onclick="borrar(${i})">×</button>
       </div></td>
     `;
@@ -191,6 +193,12 @@ function conectar(i) {
   document.getElementById('cmdSSH').value = `ssh root@127.0.0.1 -p ${a.port}`;
   document.getElementById('cmdSSHRemoto').value = `ssh -J root@${window.location.hostname} root@127.0.0.1 -p ${a.port}`;
   document.getElementById('modalConectar').classList.add('activo');
+}
+
+function abrirConsola(i) {
+  const a = agentesCache[i];
+  const url = `/consola?port=${a.port}&host=${encodeURIComponent(a.hostname)}`;
+  window.open(url, '_blank');
 }
 
 function copiarCmd() {

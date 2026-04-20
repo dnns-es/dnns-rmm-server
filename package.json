@@ -1,0 +1,17 @@
+{
+  "name": "dnns-rmm-server",
+  "version": "1.0.0",
+  "description": "DNNS RMM Server - autoalojado, gratuito",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "ssh2": "^1.16.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "SEE LICENSE IN LICENSE"
+}

@@ -71,7 +71,12 @@ tar xzf /tmp/rmm-install/repo.tar.gz -C /tmp/rmm-install --no-same-owner 2>&1 | 
 EXTRACTED=$(find /tmp/rmm-install -maxdepth 1 -type d -name "dnns-rmm-server-*" | head -1)
 [ -d "$EXTRACTED" ] || err "Estructura inesperada del repo"
 cp "$EXTRACTED/server.js" "$INSTALL_DIR/"
+cp "$EXTRACTED/package.json" "$INSTALL_DIR/"
 [ -d "$EXTRACTED/publico" ] && cp -r "$EXTRACTED/publico" "$INSTALL_DIR/"
+
+msg "Instalando dependencias npm (ws, ssh2)..."
+cd "$INSTALL_DIR"
+npm install --omit=dev --no-audit --no-fund 2>&1 | tail -3
 
 # --- 4. SSHD dedicado en puerto alternativo ---
 msg "Configurando sshd en puerto ${PUERTO_SSHD}..."

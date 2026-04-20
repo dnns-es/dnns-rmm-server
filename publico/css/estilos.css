@@ -4,7 +4,37 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap');
 
+/* ========================================================
+   TEMA CLARO por defecto (DNNS estandar)
+   Para tema oscuro: <html data-tema="oscuro">
+   ======================================================== */
 :root {
+  --verde: #4a8e36;
+  --verde-claro: #69c350;
+  --verde-oscuro: #3a7029;
+  --bg: #f6f8fa;
+  --bg-2: #ffffff;
+  --bg-3: #eef1f5;
+  --borde: #d0d7de;
+  --texto: #1f2328;
+  --texto-suave: #586069;
+  --texto-tenue: #8b949e;
+  --error: #cf222e;
+  --aviso: #9a6700;
+  --azul: #0969da;
+
+  --fuente-titular: 'Fraunces', Georgia, serif;
+  --fuente-body: 'IBM Plex Sans', sans-serif;
+  --fuente-mono: 'IBM Plex Mono', monospace;
+  --radio: 8px;
+  --transicion: .2s ease;
+  --sombra: 0 2px 8px rgba(0,0,0,.06);
+}
+
+/* ========================================================
+   TEMA OSCURO - activar con <html data-tema="oscuro">
+   ======================================================== */
+html[data-tema="oscuro"] {
   --verde: #69c350;
   --verde-claro: #8edb78;
   --verde-oscuro: #4a8e36;
@@ -18,13 +48,20 @@
   --error: #f85149;
   --aviso: #d29922;
   --azul: #58a6ff;
-
-  --fuente-titular: 'Fraunces', Georgia, serif;
-  --fuente-body: 'IBM Plex Sans', sans-serif;
-  --fuente-mono: 'IBM Plex Mono', monospace;
-  --radio: 8px;
-  --transicion: .2s ease;
+  --sombra: 0 4px 12px rgba(0,0,0,.35);
 }
+
+html[data-tema="oscuro"] .boton, html[data-tema="oscuro"] button:not(.link) { color: #0a1605; }
+html[data-tema="oscuro"] .boton-rojo { color: #fff; }
+
+/* Boton toggle tema */
+.btn-tema {
+  background: transparent; border: 1px solid var(--borde); color: var(--texto-suave);
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1rem; cursor: pointer; transition: all var(--transicion);
+}
+.btn-tema:hover { color: var(--verde); border-color: var(--verde); transform: none; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: var(--bg); color: var(--texto); font-family: var(--fuente-body); min-height: 100vh; }

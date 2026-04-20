@@ -9,6 +9,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
+const { WebSocketServer } = require('ws');
+const { Client: SSHClient } = require('ssh2');
 
 const PUERTO_API = parseInt(process.env.PUERTO_API || '3001', 10);
 const PUERTO_INICIAL_TUNEL = parseInt(process.env.PUERTO_INICIAL_TUNEL || '40000', 10);
@@ -26,6 +28,26 @@ const JWT_EXPIRA_MS = 8 * 60 * 60 * 1000; // 8 horas
 
 if (!fs.existsSync(RUTA_DATOS)) fs.mkdirSync(RUTA_DATOS, { recursive: true });
 if (!fs.existsSync(RUTA_AGENTES)) fs.writeFileSync(RUTA_AGENTES, '[]');
+
+// ============================================================
+// Keypair del SERVER (para conectar por SSH al tunel de cada agente)
+// Generada al arranque si no existe. La pubkey se envia al agente
+// al registrarse, y el agente la inyecta en root's authorized_keys.
+// ============================================================
+const SSH_DIR = path.join(RUTA_DATOS, 'ssh');
+if (!fs.existsSync(SSH_DIR)) fs.mkdirSync(SSH_DIR, { recursive: true, mode: 0o700 });
+const SSH_KEY_PRIV = path.join(SSH_DIR, 'id_ed25519');
+const SSH_KEY_PUB = path.join(SSH_DIR, 'id_ed25519.pub');
+if (!fs.existsSync(SSH_KEY_PRIV)) {
+  try {
+    execSync(`ssh-keygen -t ed25519 -C "dnns-rmm-server@$(hostname)" -f ${SSH_KEY_PRIV} -N "" -q`);
+    fs.chmodSync(SSH_KEY_PRIV, 0o600);
+    console.log('[SSH] Keypair generada en ' + SSH_KEY_PRIV);
+  } catch (e) {
+    console.error('[SSH] No se pudo generar keypair:', e.message);
+  }
+}
+const SERVER_PUBKEY = fs.existsSync(SSH_KEY_PUB) ? fs.readFileSync(SSH_KEY_PUB, 'utf8').trim() : '';
 
 if (!ADMIN_PASSWORD) {
   ADMIN_PASSWORD = crypto.randomBytes(12).toString('base64').replace(/[+/=]/g, '').substring(0, 16);
@@ -190,6 +212,11 @@ const server = http.createServer(async (req, res) => {
     return enviarJson(res, 200, { ok: true, servicio: 'dnns-rmm-server', agentes: cargarAgentes().length });
   }
 
+  // Pubkey del server (para que agentes la anadan a root's authorized_keys)
+  if (req.method === 'GET' && url === '/api/pubkey') {
+    return enviarJson(res, 200, { pubkey: SERVER_PUBKEY });
+  }
+
   // ----- AUTH -----
   if (req.method === 'POST' && url === '/api/auth/login') {
     try {
@@ -242,7 +269,7 @@ const server = http.createServer(async (req, res) => {
         existente.ultima_actualizacion = new Date().toISOString();
         try { crearUsuarioTunel(existente.user, datos.agent_pubkey); } catch (e) {}
         guardarAgentes(agentes);
-        return enviarJson(res, 200, { ok: true, user: existente.user, port: existente.port, reuso: true });
+        return enviarJson(res, 200, { ok: true, user: existente.user, port: existente.port, reuso: true, server_pubkey: SERVER_PUBKEY });
       }
 
       const port = siguientePuerto(agentes);
@@ -262,7 +289,7 @@ const server = http.createServer(async (req, res) => {
       };
       agentes.push(nuevo);
       guardarAgentes(agentes);
-      return enviarJson(res, 200, { ok: true, user, port, reuso: false });
+      return enviarJson(res, 200, { ok: true, user, port, reuso: false, server_pubkey: SERVER_PUBKEY });
     } catch (e) {
       console.error('[ERROR registrar]', e);
       return enviarJson(res, 500, { ok: false, error: e.message });
@@ -315,11 +342,113 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET') {
     if (url === '/' || url === '/login') return enviarArchivo(res, 'login.html', TIPOS['.html']);
     if (url === '/admin' || url === '/agentes') return enviarArchivo(res, 'admin.html', TIPOS['.html']);
+    if (url === '/consola') {
+      if (!autenticado(req)) {
+        res.writeHead(302, { 'Location': '/login' });
+        return res.end();
+      }
+      return enviarArchivo(res, 'consola.html', TIPOS['.html']);
+    }
     const ext = path.extname(url).toLowerCase();
     if (TIPOS[ext]) return enviarArchivo(res, url.replace(/^\//, ''), TIPOS[ext]);
   }
 
   enviarJson(res, 404, { error: 'Ruta no encontrada' });
+});
+
+// ============================================================
+// WEBSOCKET - Consola web via SSH
+// URL: wss://rmm.dnns.es/ws/consola?port=40000
+// Autenticado con la cookie rmm_session (JWT).
+// ============================================================
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (req, socket, head) => {
+  if (!req.url.startsWith('/ws/consola')) {
+    socket.destroy();
+    return;
+  }
+  // Auth via cookie
+  const sess = autenticado(req);
+  if (!sess) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
+
+wss.on('connection', (ws, req) => {
+  const urlObj = new URL(req.url, 'http://localhost');
+  const port = parseInt(urlObj.searchParams.get('port') || '0', 10);
+  if (!port || port < PUERTO_INICIAL_TUNEL || port > PUERTO_FINAL_TUNEL) {
+    ws.send('\x1b[31mPuerto invalido\x1b[0m\r\n');
+    ws.close();
+    return;
+  }
+
+  // Verificar que hay un agente registrado en ese puerto
+  const agente = cargarAgentes().find(a => a.port === port);
+  if (!agente) {
+    ws.send('\x1b[31mNo hay agente en ese puerto\x1b[0m\r\n');
+    ws.close();
+    return;
+  }
+
+  ws.send(`\x1b[32m[*] Conectando a ${agente.hostname} (${agente.user}:${port})...\x1b[0m\r\n`);
+
+  let ssh;
+  try {
+    ssh = new SSHClient();
+  } catch (e) {
+    ws.send('\x1b[31mSSH client no disponible: ' + e.message + '\x1b[0m\r\n');
+    ws.close();
+    return;
+  }
+
+  ssh.on('ready', () => {
+    ws.send('\x1b[32m[+] Conectado\x1b[0m\r\n');
+    ssh.shell({ term: 'xterm-256color' }, (err, stream) => {
+      if (err) { ws.send('\x1b[31mShell error: ' + err.message + '\x1b[0m'); ws.close(); return; }
+      stream.on('data', (d) => { if (ws.readyState === 1) ws.send(d.toString('utf8')); });
+      stream.on('close', () => ws.close());
+      stream.stderr.on('data', (d) => { if (ws.readyState === 1) ws.send(d.toString('utf8')); });
+      ws.on('message', (msg) => {
+        try {
+          const s = msg.toString('utf8');
+          if (s.startsWith('{"tipo":"resize"')) {
+            const j = JSON.parse(s);
+            stream.setWindow(j.rows || 24, j.cols || 80);
+            return;
+          }
+          stream.write(s);
+        } catch { stream.write(msg); }
+      });
+      ws.on('close', () => { try { stream.end(); } catch {} try { ssh.end(); } catch {} });
+    });
+  });
+
+  ssh.on('error', (err) => {
+    ws.send('\x1b[31m[!] Error SSH: ' + err.message + '\x1b[0m\r\n');
+    try { ws.close(); } catch {}
+  });
+
+  ssh.on('close', () => { try { ws.close(); } catch {} });
+
+  try {
+    ssh.connect({
+      host: '127.0.0.1',
+      port: port,
+      username: 'root',
+      privateKey: fs.readFileSync(SSH_KEY_PRIV),
+      readyTimeout: 15000
+    });
+  } catch (e) {
+    ws.send('\x1b[31m[!] No se pudo iniciar SSH: ' + e.message + '\x1b[0m\r\n');
+    ws.close();
+  }
 });
 
 server.listen(PUERTO_API, BIND_HOST, () => {
