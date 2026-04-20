@@ -11,6 +11,10 @@ const { execSync } = require('child_process');
 const path = require('path');
 
 const PUERTO_API = parseInt(process.env.PUERTO_API || '3001', 10);
+// Bind del puerto API. Default 0.0.0.0 para que pueda llegar NPM (con auth proxy).
+// Proteger con firewall UFW a nivel de red (solo NPM) + auth en NPM.
+// Si quieres solo localhost, usar BIND_HOST=127.0.0.1.
+const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
 const PUERTO_INICIAL_TUNEL = parseInt(process.env.PUERTO_INICIAL_TUNEL || '40000', 10);
 const PUERTO_FINAL_TUNEL = parseInt(process.env.PUERTO_FINAL_TUNEL || '40999', 10);
 const RUTA_DATOS = process.env.RUTA_DATOS || '/var/lib/dnns-rmm-server';
@@ -225,8 +229,11 @@ const server = http.createServer(async (req, res) => {
   enviarJson(res, 404, { error: 'Ruta no encontrada' });
 });
 
-server.listen(PUERTO_API, '127.0.0.1', () => {
-  console.log(`[DNNS-RMM-SERVER] API escuchando en 127.0.0.1:${PUERTO_API}`);
+server.listen(PUERTO_API, BIND_HOST, () => {
+  console.log(`[DNNS-RMM-SERVER] API escuchando en ${BIND_HOST}:${PUERTO_API}`);
   console.log(`[DNNS-RMM-SERVER] Datos en ${RUTA_DATOS}`);
   console.log(`[DNNS-RMM-SERVER] Rango puertos tunel: ${PUERTO_INICIAL_TUNEL}-${PUERTO_FINAL_TUNEL}`);
+  if (BIND_HOST !== '127.0.0.1' && !REGISTRATION_TOKEN) {
+    console.warn('[WARN] API expuesta en ' + BIND_HOST + ' SIN REGISTRATION_TOKEN. Protege con firewall+NPM auth.');
+  }
 });
