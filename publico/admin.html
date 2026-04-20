@@ -27,6 +27,7 @@
     <nav>
       <button class="sidebar-link activo" data-tab="dashboard"><span class="ico">📊</span> Dashboard</button>
       <button class="sidebar-link" data-tab="agentes"><span class="ico">🛰️</span> Agentes <span class="badge-num" id="badgeAgentes">0</span></button>
+      <button class="sidebar-link" data-tab="ddns"><span class="ico">🌐</span> DDNS</button>
       <button class="sidebar-link" data-tab="logs"><span class="ico">📋</span> Logs</button>
       <button class="sidebar-link" data-tab="config"><span class="ico">⚙️</span> Configuración</button>
     </nav>
@@ -92,6 +93,29 @@
           <tbody id="filas"></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- ========== DDNS ========== -->
+    <section data-pane="ddns" class="oculto">
+      <div class="flex-entre mb-2">
+        <div>
+          <h1>🌐 DDNS dinámico</h1>
+          <p class="texto-suave">Mantén actualizados tus dominios contra Dynu, DuckDNS, No-IP o Afraid.org. Cron interno cada 60s.</p>
+        </div>
+        <button onclick="abrirDdnsForm()">+ Añadir dominio</button>
+      </div>
+
+      <div class="tarjeta">
+        <div class="flex" style="justify-content:space-between;">
+          <div>
+            <div class="texto-suave" style="font-size:.82rem;">IP pública detectada actualmente:</div>
+            <div class="mono" id="ddnsIpActual" style="font-size:1.2rem;font-weight:600;color:var(--verde);">cargando...</div>
+          </div>
+          <button class="boton-sec boton-mini" onclick="cargarDdns()">↻ Recargar</button>
+        </div>
+      </div>
+
+      <div id="ddnsListado" class="mt-2"></div>
     </section>
 
     <!-- ========== LOGS ========== -->
@@ -175,6 +199,60 @@
   </div>
 </div>
 
+<!-- MODAL DDNS añadir/editar -->
+<div id="modalDdns" class="modal-bg">
+  <div class="modal">
+    <h3 id="modalDdnsTitulo">Nuevo dominio DDNS</h3>
+    <div id="ddnsAlerta" class="alerta oculto"></div>
+    <form id="formDdns" class="mt-2">
+      <input type="hidden" id="ddnsId" value="">
+      <div class="campo">
+        <label>Dominio (FQDN, ej. miempresa.dynu.net o sub.midominio.com)</label>
+        <input type="text" id="ddnsDominio" required placeholder="miempresa.dynu.net">
+      </div>
+      <div class="campo">
+        <label>Proveedor</label>
+        <select id="ddnsProvider">
+          <option value="dynu">Dynu (https://www.dynu.com)</option>
+          <option value="duckdns">DuckDNS (https://www.duckdns.org)</option>
+          <option value="noip">No-IP (https://www.noip.com)</option>
+          <option value="afraid">Afraid.org (https://freedns.afraid.org)</option>
+        </select>
+      </div>
+      <div class="campo" id="ddnsCampoUser">
+        <label>Usuario (Dynu/No-IP)</label>
+        <input type="text" id="ddnsUser" placeholder="tu usuario">
+      </div>
+      <div class="campo">
+        <label id="ddnsLblPass">Password / Token</label>
+        <div style="position:relative;">
+          <input type="password" id="ddnsPass" required style="padding-right:42px;">
+          <button type="button" onclick="togglePw('ddnsPass', this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;padding:4px 8px;cursor:pointer;color:var(--texto-suave);font-size:1.05rem;">👁</button>
+        </div>
+        <small class="texto-suave" id="ddnsPassAyuda">Para Dynu: usar IP Update Password (no el de login)</small>
+      </div>
+      <div class="campo">
+        <label>Intervalo de auto-sync (segundos)</label>
+        <input type="number" id="ddnsIntervalo" value="600" min="60" max="86400">
+      </div>
+      <div class="campo">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="ddnsActivo" checked style="width:auto;">
+          <span>Activo</span>
+        </label>
+      </div>
+      <div class="campo">
+        <label>Notas (opcional)</label>
+        <input type="text" id="ddnsNotas" placeholder="Ej: oficina principal">
+      </div>
+      <div class="flex" style="justify-content:flex-end;">
+        <button type="button" class="boton-sec" onclick="cerrarModales()">Cancelar</button>
+        <button type="submit">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- MODAL CAMBIAR PUERTO -->
 <div id="modalPuerto" class="modal-bg">
   <div class="modal">
@@ -210,6 +288,7 @@ document.querySelectorAll('.sidebar-link[data-tab]').forEach(b => {
     document.querySelectorAll('section[data-pane]').forEach(p => p.classList.add('oculto'));
     document.querySelector(`section[data-pane="${tab}"]`).classList.remove('oculto');
     document.getElementById('seccionTitulo').textContent = b.textContent.trim().replace(/\s+\d+$/, '');
+    if (tab === 'ddns') cargarDdns();
   });
 });
 
@@ -537,6 +616,150 @@ document.getElementById('btnLogout').addEventListener('click', async () => {
   await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
   location.href = '/login';
 });
+
+// ========== DDNS ==========
+async function cargarDdns() {
+  try {
+    const r = await fetch('/api/ddns', {credentials:'same-origin'});
+    if (r.status === 401) return location.href = '/login';
+    const d = await r.json();
+    document.getElementById('ddnsIpActual').textContent = d.ip_publica || '(no detectada)';
+    pintarDdns(d.dominios || []);
+  } catch (e) { console.error(e); }
+}
+
+function pintarDdns(lista) {
+  const cont = document.getElementById('ddnsListado');
+  if (lista.length === 0) {
+    cont.innerHTML = `<div class="empty">
+      <div class="empty-ico">🌐</div>
+      <h3>Sin dominios DDNS configurados</h3>
+      <p class="texto-suave">Añade tu primer dominio para que se actualice automáticamente.</p>
+    </div>`;
+    return;
+  }
+  cont.innerHTML = '<div class="tabla-wrap"><table><thead><tr>' +
+    '<th>Estado</th><th>Dominio</th><th>Proveedor</th><th>Última IP</th><th>Última act.</th><th>Respuesta</th><th>Acciones</th>' +
+    '</tr></thead><tbody>' +
+    lista.map(d => {
+      const ok = d.ultima_respuesta && /OK|sin cambios|good|nochg/i.test(d.ultima_respuesta);
+      return `<tr>
+        <td>
+          ${d.activo ? '<span class="badge badge-online">activo</span>' : '<span class="badge badge-offline">pausado</span>'}
+          ${ok ? '<span class="dot online" style="margin-left:6px;" title="ultima sync OK"></span>' : ''}
+        </td>
+        <td><strong>${esc(d.dominio)}</strong>${d.notas ? `<br><small class="texto-suave">${esc(d.notas)}</small>` : ''}</td>
+        <td><span class="badge badge-prod">${esc(d.provider)}</span></td>
+        <td><span class="mono-corto">${esc(d.ultima_ip || '-')}</span></td>
+        <td><small class="texto-suave">${d.ultima_actualizacion ? tiempoRelativo(d.ultima_actualizacion) : '<span class="texto-suave">nunca</span>'}</small></td>
+        <td><small class="${ok?'':'texto-suave'}" style="font-size:.82rem;">${esc(d.ultima_respuesta || '-')}</small></td>
+        <td><div class="acciones">
+          <button class="boton-mini" onclick="ddnsSync(${d.id})" title="Forzar sync">↻</button>
+          <button class="boton-mini boton-sec" onclick="ddnsEditar(${d.id})">✎</button>
+          <button class="boton-mini boton-rojo" onclick="ddnsBorrar(${d.id}, '${esc(d.dominio)}')">×</button>
+        </div></td>
+      </tr>`;
+    }).join('') + '</tbody></table></div>';
+}
+
+let ddnsCache = [];
+function abrirDdnsForm(d = null) {
+  document.getElementById('formDdns').reset();
+  document.getElementById('ddnsAlerta').classList.add('oculto');
+  document.getElementById('ddnsId').value = d ? d.id : '';
+  document.getElementById('modalDdnsTitulo').textContent = d ? 'Editar dominio: ' + d.dominio : 'Nuevo dominio DDNS';
+  if (d) {
+    document.getElementById('ddnsDominio').value = d.dominio;
+    document.getElementById('ddnsDominio').readOnly = true;
+    document.getElementById('ddnsProvider').value = d.provider;
+    document.getElementById('ddnsUser').value = d.username || '';
+    document.getElementById('ddnsPass').value = '';
+    document.getElementById('ddnsPass').required = false;
+    document.getElementById('ddnsPass').placeholder = 'Dejar vacío para no cambiar';
+    document.getElementById('ddnsIntervalo').value = d.intervalo_seg || 600;
+    document.getElementById('ddnsActivo').checked = !!d.activo;
+    document.getElementById('ddnsNotas').value = d.notas || '';
+  } else {
+    document.getElementById('ddnsDominio').readOnly = false;
+    document.getElementById('ddnsPass').required = true;
+    document.getElementById('ddnsPass').placeholder = '';
+  }
+  ajustarCamposDdns();
+  document.getElementById('modalDdns').classList.add('activo');
+}
+
+function ajustarCamposDdns() {
+  const prov = document.getElementById('ddnsProvider').value;
+  const lblPass = document.getElementById('ddnsLblPass');
+  const ayuda = document.getElementById('ddnsPassAyuda');
+  const campoUser = document.getElementById('ddnsCampoUser');
+  if (prov === 'duckdns') {
+    lblPass.textContent = 'Token DuckDNS';
+    ayuda.textContent = 'El token UUID de tu cuenta DuckDNS';
+    campoUser.style.display = 'none';
+  } else if (prov === 'afraid') {
+    lblPass.textContent = 'Token Afraid.org';
+    ayuda.textContent = 'El token de "Direct URL" del subdominio';
+    campoUser.style.display = 'none';
+  } else if (prov === 'noip') {
+    lblPass.textContent = 'Password';
+    ayuda.textContent = 'Password de tu cuenta No-IP';
+    campoUser.style.display = '';
+  } else {
+    lblPass.textContent = 'IP Update Password';
+    ayuda.textContent = 'NO el password de login. Genera uno en https://www.dynu.com/ControlPanel/IPUpdatePassword';
+    campoUser.style.display = '';
+  }
+}
+document.getElementById('ddnsProvider').addEventListener('change', ajustarCamposDdns);
+
+document.getElementById('formDdns').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('ddnsId').value;
+  const datos = {
+    dominio: document.getElementById('ddnsDominio').value.trim(),
+    provider: document.getElementById('ddnsProvider').value,
+    username: document.getElementById('ddnsUser').value.trim(),
+    password: document.getElementById('ddnsPass').value,
+    intervalo_seg: parseInt(document.getElementById('ddnsIntervalo').value, 10),
+    activo: document.getElementById('ddnsActivo').checked,
+    notas: document.getElementById('ddnsNotas').value.trim()
+  };
+  const a = document.getElementById('ddnsAlerta');
+  try {
+    const r = await fetch(id ? `/api/ddns/${id}` : '/api/ddns', {
+      method: id ? 'PUT' : 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(datos)
+    });
+    const dr = await r.json();
+    if (r.ok && dr.ok) { cerrarModales(); cargarDdns(); }
+    else { a.className='alerta alerta-error'; a.textContent = dr.error || 'Error'; a.classList.remove('oculto'); }
+  } catch (e) { a.className='alerta alerta-error'; a.textContent = 'Error de red'; a.classList.remove('oculto'); }
+});
+
+async function ddnsSync(id) {
+  try {
+    const r = await fetch(`/api/ddns/${id}/sync`, {method:'POST', credentials:'same-origin'});
+    const d = await r.json();
+    alert(d.msg || 'Sincronizado');
+    cargarDdns();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function ddnsEditar(id) {
+  const r = await fetch('/api/ddns', {credentials:'same-origin'});
+  const d = await r.json();
+  const dom = (d.dominios || []).find(x => x.id === id);
+  if (dom) abrirDdnsForm(dom);
+}
+
+async function ddnsBorrar(id, nombre) {
+  if (!confirm(`Borrar dominio "${nombre}"?`)) return;
+  await fetch(`/api/ddns/${id}`, {method:'DELETE', credentials:'same-origin'});
+  cargarDdns();
+}
 
 cargar();
 setInterval(cargar, 30000);

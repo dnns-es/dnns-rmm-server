@@ -26,8 +26,11 @@ let ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 const JWT_EXPIRA_MS = 8 * 60 * 60 * 1000; // 8 horas
 
+const RUTA_DDNS = path.join(RUTA_DATOS, 'ddns.json');
+
 if (!fs.existsSync(RUTA_DATOS)) fs.mkdirSync(RUTA_DATOS, { recursive: true });
 if (!fs.existsSync(RUTA_AGENTES)) fs.writeFileSync(RUTA_AGENTES, '[]');
+if (!fs.existsSync(RUTA_DDNS)) fs.writeFileSync(RUTA_DDNS, '[]');
 
 // ============================================================
 // Keypair del SERVER (para conectar por SSH al tunel de cada agente)
@@ -97,6 +100,135 @@ function validar(datos) {
   if (datos.producto && !RE_USER_NAME.test(datos.producto)) e.push('producto invalido');
   return e;
 }
+
+// ============================================================
+// DDNS - patron Dynu/DuckDNS/NoIP/Afraid (adaptado de passkey-dnns)
+// ============================================================
+function cargarDdns() { try { return JSON.parse(fs.readFileSync(RUTA_DDNS, 'utf8')); } catch { return []; } }
+function guardarDdns(lista) { fs.writeFileSync(RUTA_DDNS, JSON.stringify(lista, null, 2)); }
+
+let _ipCache = { ip: null, ts: 0 };
+async function getPublicIP() {
+  if (_ipCache.ip && Date.now() - _ipCache.ts < 60000) return _ipCache.ip;
+  const fuentes = ['https://api.ipify.org', 'https://ifconfig.me/ip', 'https://icanhazip.com', 'https://checkip.amazonaws.com'];
+  for (const url of fuentes) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 5000);
+      const r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(t);
+      const ip = (await r.text()).trim();
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) { _ipCache = { ip, ts: Date.now() }; return ip; }
+    } catch {}
+  }
+  return null;
+}
+
+function ddnsBuildRequest(d, ip) {
+  const host = encodeURIComponent(d.dominio);
+  const ipq = encodeURIComponent(ip);
+  let url, auth = null;
+  switch (d.provider) {
+    case 'dynu':
+      url = `https://api.dynu.com/nic/update?hostname=${host}&myip=${ipq}`;
+      auth = `${d.username || d.dominio.split('.')[0]}:${d.password}`;
+      break;
+    case 'duckdns':
+      const name = d.dominio.replace(/\.duckdns\.org$/i, '');
+      url = `https://www.duckdns.org/update?domains=${encodeURIComponent(name)}&token=${encodeURIComponent(d.password)}&ip=${ipq}`;
+      break;
+    case 'noip':
+      url = `https://dynupdate.no-ip.com/nic/update?hostname=${host}&myip=${ipq}`;
+      auth = `${d.username}:${d.password}`;
+      break;
+    case 'afraid':
+      url = `https://sync.afraid.org/u/${encodeURIComponent(d.password)}/?address=${ipq}`;
+      break;
+    default: throw new Error('Proveedor no soportado: ' + d.provider);
+  }
+  return { url, auth };
+}
+
+function ddnsParseResponse(provider, txt, httpCode) {
+  const r = String(txt || '').trim();
+  if (httpCode >= 500) return { ok: false, msg: `HTTP ${httpCode}` };
+  switch (provider) {
+    case 'dynu': case 'noip':
+      if (/^good/i.test(r)) return { ok: true, msg: 'OK actualizada (' + r + ')' };
+      if (/^nochg/i.test(r)) return { ok: true, msg: 'OK sin cambios (' + r + ')' };
+      if (/badauth/i.test(r)) return { ok: false, msg: 'Error: usuario/password invalidos' };
+      if (/nohost/i.test(r)) return { ok: false, msg: 'Error: hostname no registrado' };
+      if (/!donator/i.test(r)) return { ok: false, msg: 'Error: feature de pago' };
+      return { ok: false, msg: 'Respuesta: ' + r };
+    case 'duckdns':
+      if (r === 'OK') return { ok: true, msg: 'OK' };
+      if (r === 'KO') return { ok: false, msg: 'Error: token/dominio invalido' };
+      return { ok: false, msg: 'Respuesta: ' + r };
+    case 'afraid':
+      if (/has not changed/i.test(r)) return { ok: true, msg: 'OK sin cambios' };
+      if (/updated/i.test(r)) return { ok: true, msg: 'OK actualizado' };
+      if (/ERROR/i.test(r)) return { ok: false, msg: 'Error: ' + r };
+      return { ok: true, msg: r };
+  }
+  return { ok: false, msg: 'Proveedor desconocido' };
+}
+
+async function ddnsUpdateDominio(d, ipPublica, force = false) {
+  const ip = ipPublica || await getPublicIP();
+  if (!ip) {
+    d.ultima_actualizacion = new Date().toISOString();
+    d.ultima_respuesta = 'Error: no IP publica';
+    return { ok: false, msg: 'Sin IP publica', dominio: d.dominio };
+  }
+  if (!force && d.ultima_ip === ip && d.ultimo_exito) {
+    const desde = (Date.now() - new Date(d.ultimo_exito).getTime()) / 1000;
+    if (desde < 86400) {
+      return { ok: true, msg: 'IP sin cambios (' + ip + ')', dominio: d.dominio, skipped: true, ip };
+    }
+  }
+  const { url, auth } = ddnsBuildRequest(d, ip);
+  const headers = { 'User-Agent': 'dnns-rmm-server-DDNS/1.0' };
+  if (auth) headers['Authorization'] = 'Basic ' + Buffer.from(auth).toString('base64');
+  let txt = '', httpCode = 0;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    const resp = await fetch(url, { headers, signal: ctrl.signal });
+    clearTimeout(t);
+    httpCode = resp.status;
+    txt = await resp.text();
+  } catch (e) { txt = 'fetch error: ' + e.message; }
+  const r = ddnsParseResponse(d.provider, txt, httpCode);
+  d.ultima_ip = ip;
+  d.ultima_actualizacion = new Date().toISOString();
+  d.ultima_respuesta = r.msg.substring(0, 490);
+  if (r.ok) d.ultimo_exito = new Date().toISOString();
+  return { ...r, dominio: d.dominio, ip };
+}
+
+async function ddnsAutoSync() {
+  try {
+    const lista = cargarDdns();
+    const activos = lista.filter(d => d.activo);
+    if (!activos.length) return;
+    const ip = await getPublicIP();
+    if (!ip) { console.warn('[DDNS] sin IP publica'); return; }
+    const ahora = Date.now();
+    let ok = 0;
+    for (const d of activos) {
+      const ultima = d.ultima_actualizacion ? new Date(d.ultima_actualizacion).getTime() : 0;
+      if (ahora - ultima < (d.intervalo_seg || 600) * 1000) continue;
+      try { const r = await ddnsUpdateDominio(d, ip, false); if (r.ok) ok++; }
+      catch (e) { console.error('[DDNS]', d.dominio, e.message); }
+    }
+    if (ok > 0) {
+      guardarDdns(lista);
+      console.log(`[DDNS] auto-sync: ${ok} dominio(s) actualizados`);
+    }
+  } catch (e) { console.error('[DDNS] auto-sync error', e); }
+}
+// Cron interno: cada 60s
+setInterval(ddnsAutoSync, 60_000);
 
 // ============================================================
 // PERSISTENCIA
@@ -396,6 +528,85 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       return enviarJson(res, 500, { ok: false, error: e.message });
     }
+  }
+
+  // ----- DDNS (admin only) -----
+  if (url.startsWith('/api/ddns')) {
+    if (!autenticado(req)) return enviarJson(res, 401, { error: 'No autenticado' });
+
+    if (req.method === 'GET' && url === '/api/ddns') {
+      const lista = cargarDdns().map(d => ({
+        ...d,
+        password: d.password ? '***' : ''
+      }));
+      const ip = await getPublicIP();
+      return enviarJson(res, 200, { dominios: lista, ip_publica: ip });
+    }
+
+    if (req.method === 'POST' && url === '/api/ddns') {
+      try {
+        const { dominio, provider, username, password, intervalo_seg, notas, activo } = await leerJsonBody(req);
+        if (!dominio || !password) return enviarJson(res, 400, { error: 'dominio y password obligatorios' });
+        const prov = ['dynu','duckdns','noip','afraid'].includes(provider) ? provider : 'dynu';
+        if ((prov === 'dynu' || prov === 'noip') && !username) {
+          return enviarJson(res, 400, { error: `${prov} requiere username` });
+        }
+        const lista = cargarDdns();
+        if (lista.some(d => d.dominio === dominio.trim().toLowerCase())) {
+          return enviarJson(res, 409, { error: 'Dominio ya registrado' });
+        }
+        lista.push({
+          id: Date.now(),
+          dominio: dominio.trim().toLowerCase(),
+          provider: prov,
+          username: username || null,
+          password,
+          intervalo_seg: parseInt(intervalo_seg, 10) || 600,
+          activo: activo ? true : false,
+          notas: notas || null,
+          ultima_ip: null, ultima_actualizacion: null, ultima_respuesta: null, ultimo_exito: null,
+          creado_en: new Date().toISOString()
+        });
+        guardarDdns(lista);
+        return enviarJson(res, 200, { ok: true });
+      } catch (e) { return enviarJson(res, 500, { error: e.message }); }
+    }
+
+    if (req.method === 'PUT' && url.match(/^\/api\/ddns\/\d+$/)) {
+      try {
+        const id = parseInt(url.split('/').pop(), 10);
+        const cambios = await leerJsonBody(req);
+        const lista = cargarDdns();
+        const idx = lista.findIndex(d => d.id === id);
+        if (idx < 0) return enviarJson(res, 404, { error: 'No encontrado' });
+        ['provider','username','intervalo_seg','activo','notas'].forEach(k => {
+          if (cambios[k] !== undefined) lista[idx][k] = cambios[k];
+        });
+        if (cambios.password) lista[idx].password = cambios.password;
+        if (cambios.intervalo_seg) lista[idx].intervalo_seg = parseInt(cambios.intervalo_seg, 10) || 600;
+        guardarDdns(lista);
+        return enviarJson(res, 200, { ok: true });
+      } catch (e) { return enviarJson(res, 500, { error: e.message }); }
+    }
+
+    if (req.method === 'DELETE' && url.match(/^\/api\/ddns\/\d+$/)) {
+      const id = parseInt(url.split('/').pop(), 10);
+      const lista = cargarDdns().filter(d => d.id !== id);
+      guardarDdns(lista);
+      return enviarJson(res, 200, { ok: true });
+    }
+
+    if (req.method === 'POST' && url.match(/^\/api\/ddns\/\d+\/sync$/)) {
+      const id = parseInt(url.split('/')[3], 10);
+      const lista = cargarDdns();
+      const idx = lista.findIndex(d => d.id === id);
+      if (idx < 0) return enviarJson(res, 404, { error: 'No encontrado' });
+      const r = await ddnsUpdateDominio(lista[idx], null, true);
+      guardarDdns(lista);
+      return enviarJson(res, 200, r);
+    }
+
+    return enviarJson(res, 404, { error: 'Ruta DDNS no encontrada' });
   }
 
   // ----- HTML / Estaticos -----
