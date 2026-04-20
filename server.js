@@ -349,13 +349,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url === '/api/agentes') {
-    // Endpoint admin: incluye hw_id (necesario para borrado).
-    // No incluye agent_pubkey por brevedad.
+    // Endpoint admin: incluye hw_id (para borrado) y agent_pubkey (para detalle UI).
     const lista = cargarAgentes().map(a => ({
       _hw_id: a.hw_id,
       hostname: a.hostname, ct_ip: a.ct_ip, user: a.user, port: a.port,
       dominio: a.dominio, admin_email: a.admin_email, admin_name: a.admin_name,
       producto: a.producto, version: a.version,
+      agent_pubkey: a.agent_pubkey,
       registrado: a.registrado, ultima_actualizacion: a.ultima_actualizacion,
       ultimo_heartbeat: a.ultimo_heartbeat || null
     }));

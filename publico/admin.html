@@ -331,23 +331,64 @@ document.getElementById('filtroProducto').addEventListener('change', pintarFilas
 // ========== ACCIONES ==========
 function verDetalle(i) {
   const a = agentesCache[i];
-  document.getElementById('modalTitulo').textContent = a.hostname;
+  const online = esOnline(a);
+  const realIdx = i;
+  document.getElementById('modalTitulo').innerHTML = `<span class="dot ${online ? 'online' : 'offline'}"></span> ${esc(a.hostname)}`;
+
+  const dominioLink = a.dominio ? `<a href="https://${esc(a.dominio)}" target="_blank">${esc(a.dominio)} ↗</a>` : '<span class="texto-suave">-</span>';
+  const emailLink = a.admin_email ? `<a href="mailto:${esc(a.admin_email)}">${esc(a.admin_email)}</a>` : '<span class="texto-suave">-</span>';
+  const pubkeyCorta = a.agent_pubkey ? esc(a.agent_pubkey).substring(0, 50) + '...' : '-';
+
   document.getElementById('modalCuerpo').innerHTML = `
-    <div class="par"><span class="k">Hostname</span><span>${esc(a.hostname)}</span></div>
-    <div class="par"><span class="k">IP local</span><span class="mono">${esc(a.ct_ip || '-')}</span></div>
-    <div class="par"><span class="k">Producto</span><span>${esc(a.producto || 'generic')}</span></div>
-    <div class="par"><span class="k">Versión</span><span>${esc(a.version || '-')}</span></div>
-    <div class="par"><span class="k">Dominio</span><span>${esc(a.dominio || '-')}</span></div>
-    <div class="par"><span class="k">Admin email</span><span>${esc(a.admin_email || '-')}</span></div>
-    <div class="par"><span class="k">Admin nombre</span><span>${esc(a.admin_name || '-')}</span></div>
-    <div class="par"><span class="k">Túnel user</span><span class="mono">${esc(a.user)}</span></div>
-    <div class="par"><span class="k">Túnel puerto</span><span class="mono">${a.port}</span></div>
-    <div class="par"><span class="k">HW ID</span><span class="mono" style="font-size:.78rem;">${esc(a._hw_id || '-')}</span></div>
-    <div class="par"><span class="k">Registrado</span><span>${formatearFecha(a.registrado)}</span></div>
-    <div class="par"><span class="k">Última act.</span><span>${formatearFecha(a.ultima_actualizacion)}</span></div>
-    <div class="par"><span class="k">Heartbeat</span><span>${a.ultimo_heartbeat ? formatearFecha(a.ultimo_heartbeat) : '<span class="texto-suave">nunca</span>'}</span></div>
+    <!-- ESTADO Y ACCIONES RÁPIDAS -->
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+      <span class="badge ${online ? 'badge-online' : 'badge-offline'}" style="padding:6px 12px;font-size:.85rem;">
+        ${online ? '🟢 Online' : '⚪ Offline'}
+      </span>
+      <button class="boton-mini boton-sec" onclick="abrirConsola(${realIdx});cerrarModales();">⌨ Consola web</button>
+      <button class="boton-mini" onclick="conectar(${realIdx});cerrarModales();">SSH</button>
+      <button class="boton-mini boton-sec" onclick="cambiarPuerto(${realIdx});cerrarModales();">⇄ Cambiar puerto</button>
+    </div>
+
+    <!-- IDENTIFICACIÓN -->
+    <h4 style="margin:14px 0 8px;color:var(--verde);font-size:.85rem;text-transform:uppercase;letter-spacing:.5px;">Identificación</h4>
+    <div class="par"><span class="k">Hostname</span><span class="mono">${esc(a.hostname)}</span></div>
+    <div class="par"><span class="k">HW ID</span><span class="mono" style="font-size:.78rem;" title="${esc(a._hw_id || '-')}">${esc((a._hw_id||'').substring(0,16))}…</span></div>
+    <div class="par"><span class="k">IP local del CT</span><span class="mono">${esc(a.ct_ip || '-')}</span></div>
+
+    <!-- PRODUCTO -->
+    <h4 style="margin:18px 0 8px;color:var(--verde);font-size:.85rem;text-transform:uppercase;letter-spacing:.5px;">Producto</h4>
+    <div class="par"><span class="k">Tipo</span><span><span class="badge badge-prod">${esc(a.producto || 'generic')}</span></span></div>
+    <div class="par"><span class="k">Versión</span><span class="mono">${esc(a.version || '-')}</span></div>
+    <div class="par"><span class="k">Dominio público</span><span>${dominioLink}</span></div>
+
+    <!-- ADMINISTRACIÓN -->
+    <h4 style="margin:18px 0 8px;color:var(--verde);font-size:.85rem;text-transform:uppercase;letter-spacing:.5px;">Administrador</h4>
+    <div class="par"><span class="k">Nombre</span><span>${esc(a.admin_name || '-')}</span></div>
+    <div class="par"><span class="k">Email</span><span>${emailLink}</span></div>
+
+    <!-- TÚNEL SSH -->
+    <h4 style="margin:18px 0 8px;color:var(--verde);font-size:.85rem;text-transform:uppercase;letter-spacing:.5px;">Túnel SSH inverso</h4>
+    <div class="par"><span class="k">Usuario</span><span class="mono">${esc(a.user)}</span></div>
+    <div class="par"><span class="k">Puerto local</span><span class="mono">127.0.0.1:${a.port}</span></div>
+    <div class="par"><span class="k">Pubkey agente</span><span class="mono" style="font-size:.78rem;" title="${esc(a.agent_pubkey || '')}">${pubkeyCorta}</span></div>
+
+    <!-- FECHAS -->
+    <h4 style="margin:18px 0 8px;color:var(--verde);font-size:.85rem;text-transform:uppercase;letter-spacing:.5px;">Cronología</h4>
+    <div class="par"><span class="k">Registrado</span><span>${formatearFecha(a.registrado)} <small class="texto-suave">(${tiempoRelativo(a.registrado)})</small></span></div>
+    <div class="par"><span class="k">Última act.</span><span>${formatearFecha(a.ultima_actualizacion)} <small class="texto-suave">(${tiempoRelativo(a.ultima_actualizacion)})</small></span></div>
+    <div class="par"><span class="k">Último heartbeat</span><span>${a.ultimo_heartbeat ? `${formatearFecha(a.ultimo_heartbeat)} <small class="texto-suave">(${tiempoRelativo(a.ultimo_heartbeat)})</small>` : '<span class="texto-suave">nunca</span>'}</span></div>
   `;
   document.getElementById('modalDetalle').classList.add('activo');
+}
+
+function tiempoRelativo(iso) {
+  if (!iso) return '-';
+  const d = Date.now() - new Date(iso).getTime();
+  if (d < 60000) return 'hace unos segundos';
+  if (d < 3600000) return 'hace ' + Math.floor(d/60000) + ' min';
+  if (d < 86400000) return 'hace ' + Math.floor(d/3600000) + ' h';
+  return 'hace ' + Math.floor(d/86400000) + ' días';
 }
 
 function abrirConsola(i) {
