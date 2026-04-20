@@ -81,15 +81,15 @@ Registro de un agente.
 Request:
 ```json
 {
-  "hostname": "printgit-abc123",
-  "ct_ip": "192.168.10.179",
+  "hostname": "miserver-abc123",
+  "ct_ip": "192.168.1.50",
   "hw_id": "sha256-32-chars",
   "agent_pubkey": "ssh-ed25519 AAAA...",
-  "producto": "printserver",
-  "version": "printserver-1.0",
-  "admin_email": "admin@empresa.com",
-  "admin_name": "Juan Perez",
-  "dominio": "print.empresa.com"
+  "producto": "generic",
+  "version": "generic-1.0",
+  "admin_email": "admin@ejemplo.es",
+  "admin_name": "Tu Nombre",
+  "dominio": "miapp.ejemplo.es"
 }
 ```
 
@@ -117,7 +117,7 @@ Una vez registrado un agente y con el túnel activo:
 ssh root@127.0.0.1 -p 40009  # 40009 = puerto del agente
 ```
 
-O monta una pequeña UI/proxy que mapee `agent_id → puerto` para que tu equipo de soporte solo elija "Conectar a printgit-abc123" y se haga automático.
+O usa la **UI web admin** incluida (`/login`) que ya muestra la lista de agentes con botones de **Consola web** (xterm.js + WebSocket SSH), **SSH** (copiar comando), **Cambiar puerto** y **Borrar**.
 
 ---
 
